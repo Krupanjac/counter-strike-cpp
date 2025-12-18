@@ -1,0 +1,38 @@
+{
+  "$schema": "https://raw.githubusercontent.com/microsoft/vcpkg-tool/main/docs/vcpkg.schema.json",
+  "name": "counter-strike-cpp",
+  "version": "0.1.0",
+  "description": "Modern C++ game engine with GoldSrc movement and networking",
+  "homepage": "https://github.com/yourname/counter-strike-cpp",
+  "license": "MIT",
+  "supports": "windows | linux | osx",
+  "dependencies": [
+    "sdl2",
+    "glm",
+    "entt",
+    "enet",
+    "imgui",
+    "spdlog",
+    "openal-soft",
+    "tinygltf",
+    "stb",
+    "glad",
+    "gtest",
+    "nlohmann-json"
+  ],
+  "features": {
+    "tracy": {
+      "description": "Enable Tracy profiler integration",
+      "dependencies": [
+        "tracy"
+      ]
+    },
+    "ktx": {
+      "description": "Enable KTX texture support",
+      "dependencies": [
+        "ktx"
+      ]
+    }
+  },
+  "builtin-baseline": "d2452281016c6d77b6ef199d599d9929eafe4807"
+}

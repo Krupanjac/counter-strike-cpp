@@ -1,0 +1,95 @@
+# Build directories
+build/
+out/
+cmake-build-*/
+.build/
+
+# IDE files
+.vs/
+.vscode/
+.idea/
+.cursor/
+*.sln
+*.vcxproj*
+*.user
+*.suo
+*.opensdf
+*.sdf
+
+# Compiled files
+*.o
+*.obj
+*.exe
+*.dll
+*.so
+*.dylib
+*.a
+*.lib
+*.pdb
+*.ilk
+*.exp
+
+# Dependencies
+external/
+vcpkg_installed/
+node_modules/
+
+# Logs
+*.log
+logs/
+
+# Cache
+.cache/
+__pycache__/
+*.pyc
+
+# Generated files
+*.generated.*
+
+# Asset binaries (large files, should use LFS or separate repo)
+*.ktx2
+*.glb
+*.gltf
+!assets/**/*.gltf
+
+# Testing
+Testing/
+test_results/
+
+# Coverage
+coverage/
+*.gcov
+*.gcda
+*.gcno
+
+# Documentation generated
+docs/html/
+docs/latex/
+
+# Temporary files
+*.tmp
+*.temp
+*.swp
+*~
+
+# OS files
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Editor backup files
+*.bak
+*.orig
+
+# Profiling
+*.nsp
+*.tracy
+
+# Core dumps
+core
+core.*
+
+# Config files with secrets
+config.local.json
+*.secret.*
+
