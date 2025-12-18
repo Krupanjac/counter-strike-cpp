@@ -121,15 +121,12 @@ Result<SimpleBSPMesh> SimpleBSPLoader::parseBSP(std::ifstream& file, const std::
     }
     
     // Parse vertices
-    // GoldSrc coordinate system: X=forward, Y=up, Z=left/right (left-handed, +Z = left)
-    // OpenGL coordinate system: X=left/right, Y=up, Z=forward (right-handed, +X = right)
-    // Conversion: swap X and Z (simple swap, no negation)
-    // GoldSrc (X,Y,Z) -> OpenGL (Z,Y,X)
     const bsp::BSPVertex* bspVertices = reinterpret_cast<const bsp::BSPVertex*>(vertexData.data());
     std::vector<Vec3> positions;
     positions.reserve(vertexCount);
     for (u32 i = 0; i < vertexCount; ++i) {
         // Simple swap: GoldSrc (X,Y,Z) -> OpenGL (Z,Y,X)
+        // Transformation matrix applied in render function handles final orientation
         positions.push_back(Vec3(
             bspVertices[i].position[2],   // GoldSrc Z -> OpenGL X
             bspVertices[i].position[1],   // GoldSrc Y -> OpenGL Y (up stays up)
@@ -203,11 +200,12 @@ Result<SimpleBSPMesh> SimpleBSPLoader::parseBSP(std::ifstream& file, const std::
             if (face.numEdges < 3) continue;
         
             // Get face normal from plane
-            // Also need to swap X and Z for normals
+            // Apply same swap as vertices: GoldSrc (X,Y,Z) -> OpenGL (Z,Y,X)
+            // Transformation matrix in render function handles final orientation
             Vec3 faceNormal(0.0f, 1.0f, 0.0f);
             if (face.planeIndex < planeCount) {
                 const bsp::BSPPlane& plane = planes[face.planeIndex];
-                // Swap X and Z: GoldSrc (X,Y,Z) -> OpenGL (Z,Y,X)
+                // Simple swap: GoldSrc (X,Y,Z) -> OpenGL (Z,Y,X)
                 faceNormal = Vec3(plane.normal[2], plane.normal[1], plane.normal[0]);
                 // Flip normal if face is on back side
                 if (face.side != 0) {
@@ -255,7 +253,8 @@ Result<SimpleBSPMesh> SimpleBSPLoader::parseBSP(std::ifstream& file, const std::
                     // vecs[0] = S axis (U direction)
                     // vecs[1] = T axis (V direction)
                     // Each is [Sx, Sy, Sz, offset] or [Tx, Ty, Tz, offset]
-                    // We need to swap X and Z for coordinate system conversion
+                    // Apply same swap as vertices: GoldSrc (X,Y,Z) -> OpenGL (Z,Y,X)
+                    // Transformation matrix in render function handles final orientation
                     sAxis[0] = texInfo.vecs[0][2];   // GoldSrc Z -> OpenGL X
                     sAxis[1] = texInfo.vecs[0][1];   // GoldSrc Y -> OpenGL Y
                     sAxis[2] = texInfo.vecs[0][0];   // GoldSrc X -> OpenGL Z
@@ -323,14 +322,28 @@ Result<SimpleBSPMesh> SimpleBSPLoader::parseBSP(std::ifstream& file, const std::
     LOG_INFO("Extracted {} mesh groups with {} total vertices and {} total indices from BSP", 
              mesh.groups.size(), totalVertices, totalIndices);
     
-    // Calculate map bounding box from all vertices
-    mesh.bounds = AABB();
+    // Calculate map bounding box from all vertices (untransformed)
+    AABB untransformedBounds;
     for (const auto& group : mesh.groups) {
         for (const auto& vertex : group.vertices) {
-            mesh.bounds.expand(vertex.position);
+            untransformedBounds.expand(vertex.position);
         }
     }
-    LOG_INFO("Map bounds: min=({:.1f}, {:.1f}, {:.1f}), max=({:.1f}, {:.1f}, {:.1f})",
+    
+    // Transform bounds using the same transformation applied in render
+    // Render applies: 90° Z rotation, 180° Y rotation, Y scale -1
+    Mat4 transformMatrix = glm::mat4(1.0f);
+    transformMatrix = glm::rotate(transformMatrix, math::radians(90.0f), Vec3(0.0f, 0.0f, 1.0f));
+    transformMatrix = glm::rotate(transformMatrix, math::radians(180.0f), Vec3(0.0f, 1.0f, 0.0f));
+    transformMatrix = glm::scale(transformMatrix, Vec3(1.0f, -1.0f, 1.0f));
+    
+    // Transform the bounds to match the rendered map orientation
+    mesh.bounds = untransformedBounds.transformed(transformMatrix);
+    
+    LOG_INFO("Map bounds (untransformed): min=({:.1f}, {:.1f}, {:.1f}), max=({:.1f}, {:.1f}, {:.1f})",
+             untransformedBounds.min.x, untransformedBounds.min.y, untransformedBounds.min.z,
+             untransformedBounds.max.x, untransformedBounds.max.y, untransformedBounds.max.z);
+    LOG_INFO("Map bounds (transformed): min=({:.1f}, {:.1f}, {:.1f}), max=({:.1f}, {:.1f}, {:.1f})",
              mesh.bounds.min.x, mesh.bounds.min.y, mesh.bounds.min.z,
              mesh.bounds.max.x, mesh.bounds.max.y, mesh.bounds.max.z);
     
