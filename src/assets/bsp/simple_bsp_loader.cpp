@@ -121,18 +121,19 @@ Result<SimpleBSPMesh> SimpleBSPLoader::parseBSP(std::ifstream& file, const std::
     }
     
     // Parse vertices
-    // GoldSrc coordinate system: X=forward, Y=up, Z=left/right
-    // OpenGL coordinate system: X=left/right, Y=up, Z=forward
-    // So we need to swap X and Z when converting
+    // GoldSrc coordinate system: X=forward, Y=up, Z=left/right (left-handed, +Z = left)
+    // OpenGL coordinate system: X=left/right, Y=up, Z=forward (right-handed, +X = right)
+    // Conversion: swap X and Z (simple swap, no negation)
+    // GoldSrc (X,Y,Z) -> OpenGL (Z,Y,X)
     const bsp::BSPVertex* bspVertices = reinterpret_cast<const bsp::BSPVertex*>(vertexData.data());
     std::vector<Vec3> positions;
     positions.reserve(vertexCount);
     for (u32 i = 0; i < vertexCount; ++i) {
-        // Swap X and Z: GoldSrc (X,Y,Z) -> OpenGL (Z,Y,X)
+        // Simple swap: GoldSrc (X,Y,Z) -> OpenGL (Z,Y,X)
         positions.push_back(Vec3(
-            bspVertices[i].position[2],  // GoldSrc Z -> OpenGL X
-            bspVertices[i].position[1],  // GoldSrc Y -> OpenGL Y (up stays up)
-            bspVertices[i].position[0]   // GoldSrc X -> OpenGL Z
+            bspVertices[i].position[2],   // GoldSrc Z -> OpenGL X
+            bspVertices[i].position[1],   // GoldSrc Y -> OpenGL Y (up stays up)
+            bspVertices[i].position[0]    // GoldSrc X -> OpenGL Z
         ));
     }
     
@@ -206,7 +207,7 @@ Result<SimpleBSPMesh> SimpleBSPLoader::parseBSP(std::ifstream& file, const std::
             Vec3 faceNormal(0.0f, 1.0f, 0.0f);
             if (face.planeIndex < planeCount) {
                 const bsp::BSPPlane& plane = planes[face.planeIndex];
-                // Swap X and Z for normal: GoldSrc (X,Y,Z) -> OpenGL (Z,Y,X)
+                // Swap X and Z: GoldSrc (X,Y,Z) -> OpenGL (Z,Y,X)
                 faceNormal = Vec3(plane.normal[2], plane.normal[1], plane.normal[0]);
                 // Flip normal if face is on back side
                 if (face.side != 0) {
@@ -255,15 +256,15 @@ Result<SimpleBSPMesh> SimpleBSPLoader::parseBSP(std::ifstream& file, const std::
                     // vecs[1] = T axis (V direction)
                     // Each is [Sx, Sy, Sz, offset] or [Tx, Ty, Tz, offset]
                     // We need to swap X and Z for coordinate system conversion
-                    sAxis[0] = texInfo.vecs[0][2];  // GoldSrc Z -> OpenGL X
-                    sAxis[1] = texInfo.vecs[0][1];  // GoldSrc Y -> OpenGL Y
-                    sAxis[2] = texInfo.vecs[0][0];  // GoldSrc X -> OpenGL Z
-                    sAxis[3] = texInfo.vecs[0][3];  // Offset
+                    sAxis[0] = texInfo.vecs[0][2];   // GoldSrc Z -> OpenGL X
+                    sAxis[1] = texInfo.vecs[0][1];   // GoldSrc Y -> OpenGL Y
+                    sAxis[2] = texInfo.vecs[0][0];   // GoldSrc X -> OpenGL Z
+                    sAxis[3] = texInfo.vecs[0][3];   // Offset
                     
-                    tAxis[0] = texInfo.vecs[1][2];  // GoldSrc Z -> OpenGL X
-                    tAxis[1] = texInfo.vecs[1][1];  // GoldSrc Y -> OpenGL Y
-                    tAxis[2] = texInfo.vecs[1][0];  // GoldSrc X -> OpenGL Z
-                    tAxis[3] = texInfo.vecs[1][3];  // Offset
+                    tAxis[0] = texInfo.vecs[1][2];   // GoldSrc Z -> OpenGL X
+                    tAxis[1] = texInfo.vecs[1][1];   // GoldSrc Y -> OpenGL Y
+                    tAxis[2] = texInfo.vecs[1][0];   // GoldSrc X -> OpenGL Z
+                    tAxis[3] = texInfo.vecs[1][3];   // Offset
                     
                     hasTexCoords = true;
                 }

@@ -83,10 +83,17 @@ public:
         }
         
         // Set up camera inside the map (de_dust2 spawn area)
-        // GoldSrc coordinate system: Y is up, typical spawn is around (0, 64, 0)
+        // Map is converted to OpenGL coordinates: X=left/right, Y=up, Z=forward
+        // After BSP conversion: GoldSrc (X,Y,Z) -> OpenGL (Z,Y,X)
+        // So OpenGL: +X = left (was GoldSrc +Z), +Y = up, +Z = forward (was GoldSrc +X)
         m_cameraPosition = Vec3(0.0f, 64.0f, 0.0f);  // Inside the map, at player height
-        m_cameraYaw = 0.0f;  // Looking along -Z axis (standard FPS forward)
-        m_cameraPitch = 0.0f; // Looking horizontal (not down from top)
+        // Initial yaw: -90 degrees to rotate map 90 degrees right from spawn
+        // forwardH = (sin(-90), 0, cos(-90)) = (-1, 0, 0) = -X = looking left
+        // Actually, if map spawns to left, we need to rotate right 90 degrees
+        // So initial yaw = -90 means we start looking left, then rotate right to see map
+        // But user wants to see map correctly from start, so set to 0 after rotation = -90 initial
+        m_cameraYaw = -90.0f;  // Rotate 90 degrees right from default to see map correctly
+        m_cameraPitch = 0.0f;  // Looking horizontal
         
         // Initialize input
         m_window.setCursorCaptured(true);
@@ -226,22 +233,33 @@ private:
         m_renderer.setViewport(fbSize.x, fbSize.y);
         
         // Calculate view and projection matrices
-        // STANDARD FPS CAMERA - consistent with movement code
+        // STANDARD FPS CAMERA: Camera stays at fixed position, view rotates around it
+        // Coordinate system: X=right, Y=up, Z=forward (matches converted BSP map)
         f32 yawRad = math::radians(m_cameraYaw);
         f32 pitchRad = math::radians(m_cameraPitch);
         
-        // Calculate camera basis vectors (same as movement code)
-        Vec3 forwardH(-std::sin(yawRad), 0.0f, -std::cos(yawRad));  // Horizontal forward
-        Vec3 rightH(std::cos(yawRad), 0.0f, -std::sin(yawRad));     // Horizontal right
+        // Forward vector in horizontal plane (XZ plane)
+        // When yaw=0: forward = +Z (looking along positive Z = forward)
+        // Coordinate system: +X = Left in map, so we use cross product for right vector
+        Vec3 forwardH(std::sin(yawRad), 0.0f, std::cos(yawRad));
         
-        // Apply pitch to forward vector (rotate around right vector)
+        // FIX: Calculate Right vector using Cross Product for consistency
+        // Cross Product of (Forward) x (Up=Y) gives the correct perpendicular "Right" vector
+        // This ensures consistency with the coordinate system where +X = Left
+        Vec3 rightH = glm::normalize(glm::cross(forwardH, Vec3(0.0f, 1.0f, 0.0f)));
+        
+        // Apply pitch: rotate forwardH around rightH
+        // forward = forwardH * cos(pitch) + up * sin(pitch)
         Vec3 forward = forwardH * std::cos(pitchRad) + Vec3(0.0f, 1.0f, 0.0f) * std::sin(pitchRad);
         forward = glm::normalize(forward);
         
-        // Calculate up vector (perpendicular to forward and right)
-        Vec3 up = glm::normalize(glm::cross(rightH, forward));
+        // Calculate camera up vector: rotate world up around rightH by pitch
+        // up = worldUp * cos(pitch) - forwardH * sin(pitch)
+        Vec3 up = Vec3(0.0f, 1.0f, 0.0f) * std::cos(pitchRad) - forwardH * std::sin(pitchRad);
+        up = glm::normalize(up);
         
-        // Create view matrix
+        // Create view matrix: camera at fixed position, looking along forward direction
+        // The map stays fixed in world space, camera rotates around its position
         Vec3 target = m_cameraPosition + forward;
         Mat4 view = math::lookAt(m_cameraPosition, target, up);
         
@@ -334,18 +352,24 @@ private:
         
         // Debug logging every 300 frames (5 seconds at 60 FPS)
         if (frameCount % 300 == 0) {
-            LOG_INFO("Camera pos: ({:.2f}, {:.2f}, {:.2f}), yaw: {:.2f}, pitch: {:.2f}",
+            LOG_INFO("Camera pos: ({:.2f}, {:.2f}, {:.2f}), yaw: {:.2f}, pitch: {:.2f}, mouseDelta: ({:.2f}, {:.2f})",
                      m_cameraPosition.x, m_cameraPosition.y, m_cameraPosition.z,
-                     m_cameraYaw, m_cameraPitch);
+                     m_cameraYaw, m_cameraPitch, mouseDelta.x, mouseDelta.y);
         }
         
-        // Apply mouse sensitivity - STANDARD FPS CAMERA
-        // Mouse right = rotate right (increase yaw)
-        // Mouse up = look up (decrease pitch, because screen Y is inverted)
+        // STANDARD FPS CAMERA ROTATION - EXACTLY LIKE COUNTER-STRIKE
+        // Mouse X (horizontal) = yaw rotation (left/right look)
+        // Mouse Y (vertical) = pitch rotation (up/down look)
+        // In SDL relative mode: positive X = right, positive Y = down
         const f32 mouseSensitivity = 0.1f;
-        if (glm::length(mouseDelta) > 0.0f) {
-            m_cameraYaw += mouseDelta.x * mouseSensitivity;    // Horizontal: right = positive
-            m_cameraPitch -= mouseDelta.y * mouseSensitivity;   // Vertical: up = negative (screen Y is down)
+        
+        // Only apply rotation if there's actual mouse movement (avoid floating point noise)
+        // FIX: Invert Yaw control because +X is Left in our map coordinate system
+        // Since +X is Left in the map, increasing Yaw (rotating to +X) means looking Left.
+        // We want Mouse Right to look Right, so we must DECREASE Yaw.
+        if (std::abs(mouseDelta.x) > 0.001f || std::abs(mouseDelta.y) > 0.001f) {
+            m_cameraYaw -= mouseDelta.x * mouseSensitivity;      // Inverted: Mouse right = decrease yaw (turn right)
+            m_cameraPitch -= mouseDelta.y * mouseSensitivity;      // Y controls pitch (vertical rotation)
         }
         
         // Clamp pitch to prevent gimbal lock
@@ -354,37 +378,47 @@ private:
         // Normalize yaw to 0-360 range
         m_cameraYaw = math::normalizeAngle360(m_cameraYaw);
         
-        // Calculate camera basis vectors from yaw and pitch
-        // These will be used for BOTH movement AND view matrix
+        // Calculate camera basis vectors for movement
+        // Movement uses horizontal plane only (ignores pitch)
         f32 yawRad = math::radians(m_cameraYaw);
-        f32 pitchRad = math::radians(m_cameraPitch);
         
-        // Forward vector in horizontal plane (matches movement)
-        Vec3 forwardH(-std::sin(yawRad), 0.0f, -std::cos(yawRad));
-        Vec3 rightH(std::cos(yawRad), 0.0f, -std::sin(yawRad));
+        // Forward vector in horizontal plane
+        // Coordinate system: X=left/right (where +X = Left in map), Y=up, Z=forward
+        // When yaw=0: forward = +Z
+        Vec3 forwardH(std::sin(yawRad), 0.0f, std::cos(yawRad));
         
-        // Apply pitch to forward vector (rotate around right vector)
-        Vec3 forward = forwardH * std::cos(pitchRad) + Vec3(0.0f, 1.0f, 0.0f) * std::sin(pitchRad);
-        forward = glm::normalize(forward);
+        // FIX: Calculate Right vector using Cross Product
+        // Manual calculation was: Vec3(std::cos(yawRad), 0.0f, -std::sin(yawRad))
+        // That formula resulted in +X, but +X is Left in our map coordinate system.
+        // Cross Product of (Forward) x (Up=Y) gives the correct perpendicular "Right" vector.
+        Vec3 rightH = glm::normalize(glm::cross(forwardH, Vec3(0.0f, 1.0f, 0.0f)));
         
-        // Movement - standard FPS controls
-        // W/S moves forward/backward, A/D strafes left/right
-        Vec3 moveDir(0.0f);
+        // Movement - STANDARD FPS CONTROLS (now with correct vectors)
+        // W = forward (along forwardH direction)
         if (m_input.isKeyDown(Key::W)) {
-            // Move forward (in horizontal plane, ignoring pitch)
             m_cameraPosition += forwardH * 500.0f * dt;
         }
+        // S = backward (opposite forwardH)
         if (m_input.isKeyDown(Key::S)) {
-            // Move backward
             m_cameraPosition -= forwardH * 500.0f * dt;
         }
+        // A = strafe left (opposite rightH)
         if (m_input.isKeyDown(Key::A)) {
-            // Strafe left
             m_cameraPosition -= rightH * 500.0f * dt;
         }
+        // D = strafe right (along rightH)
         if (m_input.isKeyDown(Key::D)) {
-            // Strafe right
             m_cameraPosition += rightH * 500.0f * dt;
+        }
+        
+        // Vertical movement (along Y axis)
+        // Space = up (along +Y)
+        if (m_input.isKeyDown(Key::Space)) {
+            m_cameraPosition.y += 500.0f * dt;
+        }
+        // Ctrl = down (along -Y)
+        if (m_input.isKeyDown(Key::LeftCtrl)) {
+            m_cameraPosition.y -= 500.0f * dt;
         }
         
         // Clamp position to map bounds
@@ -393,20 +427,6 @@ private:
             m_cameraPosition.x = math::clamp(m_cameraPosition.x, m_mapMesh.bounds.min.x + margin, m_mapMesh.bounds.max.x - margin);
             m_cameraPosition.z = math::clamp(m_cameraPosition.z, m_mapMesh.bounds.min.z + margin, m_mapMesh.bounds.max.z - margin);
             m_cameraPosition.y = math::clamp(m_cameraPosition.y, m_mapMesh.bounds.min.y - 100.0f, m_mapMesh.bounds.max.y + 500.0f);
-        }
-        
-        // Vertical movement
-        if (m_input.isKeyDown(Key::Space)) {
-            m_cameraPosition.y += 500.0f * dt;
-            if (m_mapMesh.loaded && m_mapMesh.bounds.isValid()) {
-                m_cameraPosition.y = math::clamp(m_cameraPosition.y, m_mapMesh.bounds.min.y - 100.0f, m_mapMesh.bounds.max.y + 500.0f);
-            }
-        }
-        if (m_input.isKeyDown(Key::LeftCtrl)) {
-            m_cameraPosition.y -= 500.0f * dt;
-            if (m_mapMesh.loaded && m_mapMesh.bounds.isValid()) {
-                m_cameraPosition.y = math::clamp(m_cameraPosition.y, m_mapMesh.bounds.min.y - 100.0f, m_mapMesh.bounds.max.y + 500.0f);
-            }
         }
     }
     
