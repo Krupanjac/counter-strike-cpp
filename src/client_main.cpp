@@ -73,7 +73,7 @@ public:
         
         // Load weapon
         assets::SimpleGLTFLoader gltfLoader;
-        auto weaponResult = gltfLoader.load("assets/weapons/ak-47.gltf");
+        auto weaponResult = gltfLoader.load("assets/weapons/ak-47/scene.gltf");
         if (weaponResult) {
             m_weaponModel = std::move(*weaponResult);  // Move instead of copy
             LOG_INFO("Weapon loaded successfully");
@@ -332,12 +332,23 @@ private:
             LOG_WARN("Map mesh not rendering - loaded: {}, groups: {}", m_mapMesh.loaded, m_mapMesh.groups.size());
         }
         
-        // Don't render weapon for now - focus on map
          if (m_weaponModel.loaded && m_weaponModel.mesh.isValid()) {
+             // Position weapon in first-person view position
              Mat4 weaponModel = glm::mat4(1.0f);
-             weaponModel = glm::translate(weaponModel, Vec3(0.0f, 100.0f, -100.0f));
-             weaponModel = glm::scale(weaponModel, Vec3(100.0f));
-             m_renderer.drawMesh(m_weaponModel.mesh, weaponModel, Vec3(1.0f, 0.0f, 0.0f));
+             
+             // First-person weapon position: right side, slightly down, in front
+             Vec3 weaponOffset = Vec3(0.3f, -0.2f, -0.5f);
+             weaponModel = glm::translate(weaponModel, m_cameraPosition + weaponOffset);
+             
+             // Rotate to match camera orientation
+             weaponModel = glm::rotate(weaponModel, glm::radians(m_cameraYaw), Vec3(0.0f, 1.0f, 0.0f));
+             weaponModel = glm::rotate(weaponModel, glm::radians(m_cameraPitch), Vec3(1.0f, 0.0f, 0.0f));
+             
+             // Scale: glTF models are typically in meters, scale to appropriate weapon size
+             weaponModel = glm::scale(weaponModel, Vec3(0.1f)); // Scale down from meters to reasonable size
+             
+             // Use white color for now (textures will be added later)
+             m_renderer.drawMesh(m_weaponModel.mesh, weaponModel, Vec3(1.0f, 1.0f, 1.0f));
          }
     }
     

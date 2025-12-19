@@ -76,6 +76,12 @@ if(TINYGLTF_INCLUDE_DIRS)
     set(TINYGLTF_FOUND TRUE)
 endif()
 
+# stb is header-only, find in vcpkg or system
+find_path(STB_INCLUDE_DIRS "stb_image.h")
+if(STB_INCLUDE_DIRS)
+    set(STB_FOUND TRUE)
+endif()
+
 # =============================================================================
 # Core Library
 # =============================================================================
@@ -184,6 +190,12 @@ target_link_libraries(cscpp_assets PUBLIC
 
 if(TINYGLTF_FOUND)
     target_include_directories(cscpp_assets PRIVATE ${TINYGLTF_INCLUDE_DIRS})
+    target_compile_definitions(cscpp_assets PRIVATE TINYGLTF_FOUND)
+endif()
+
+if(STB_FOUND)
+    target_include_directories(cscpp_assets PRIVATE ${STB_INCLUDE_DIRS})
+    target_compile_definitions(cscpp_assets PRIVATE STB_FOUND)
 endif()
 
 # =============================================================================
