@@ -333,12 +333,12 @@ private:
         }
         
         // Don't render weapon for now - focus on map
-        // if (m_weaponModel.loaded && m_weaponModel.mesh.isValid()) {
-        //     Mat4 weaponModel = glm::mat4(1.0f);
-        //     weaponModel = glm::translate(weaponModel, Vec3(0.0f, 100.0f, -100.0f));
-        //     weaponModel = glm::scale(weaponModel, Vec3(100.0f));
-        //     m_renderer.drawMesh(m_weaponModel.mesh, weaponModel, Vec3(1.0f, 0.0f, 0.0f));
-        // }
+         if (m_weaponModel.loaded && m_weaponModel.mesh.isValid()) {
+             Mat4 weaponModel = glm::mat4(1.0f);
+             weaponModel = glm::translate(weaponModel, Vec3(0.0f, 100.0f, -100.0f));
+             weaponModel = glm::scale(weaponModel, Vec3(100.0f));
+             m_renderer.drawMesh(m_weaponModel.mesh, weaponModel, Vec3(1.0f, 0.0f, 0.0f));
+         }
     }
     
     void updateCamera(f32 dt) {

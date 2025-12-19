@@ -233,6 +233,23 @@ target_link_libraries(cscpp_ui PUBLIC
 )
 
 # =============================================================================
+# Helper function to copy DLLs to output directory
+# =============================================================================
+
+function(copy_dlls_to_output target_name)
+    if(WIN32)
+        # Copy SDL2 DLL from vcpkg_installed directory
+        # Uses generator expressions to handle both Debug and Release configurations
+        add_custom_command(TARGET ${target_name} POST_BUILD
+            COMMAND ${CMAKE_COMMAND} -E copy_if_different
+                "$<IF:$<CONFIG:Debug>,${CMAKE_BINARY_DIR}/vcpkg_installed/x64-windows/debug/bin/SDL2d.dll,${CMAKE_BINARY_DIR}/vcpkg_installed/x64-windows/bin/SDL2.dll>"
+                "${CMAKE_BINARY_DIR}/bin/$<CONFIG>"
+            COMMENT "Copying SDL2 DLL to output directory"
+        )
+    endif()
+endfunction()
+
+# =============================================================================
 # Executables
 # =============================================================================
 
@@ -257,6 +274,9 @@ if(CSCPP_BUILD_CLIENT)
     if(WIN32)
         target_link_libraries(cscpp_client PRIVATE SDL2::SDL2main)
     endif()
+    
+    # Copy DLLs to output directory
+    copy_dlls_to_output(cscpp_client)
     
     # Copy assets to build directory
     add_custom_command(TARGET cscpp_client POST_BUILD
