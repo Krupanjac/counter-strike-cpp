@@ -584,7 +584,60 @@ bool SimpleBSPLoader::loadTextures(std::ifstream& file, const bsp::BSPHeader& he
     return true;
 }
 
+// Loaded palette from palette.lmp file
+static u8 g_palette[256][3] = {0};
+static bool g_paletteLoaded = false;
+
+// Load palette from palette.lmp file (256 colors * 3 bytes RGB = 768 bytes)
+static bool loadPalette() {
+    if (g_paletteLoaded) {
+        return true;
+    }
+    
+    // Try multiple paths to find palette.lmp
+    std::vector<std::string> tryPaths = {
+        "assets/gfx/palette.lmp",
+        "../assets/gfx/palette.lmp",
+        "../../assets/gfx/palette.lmp",
+        "../../../assets/gfx/palette.lmp",
+        "gfx/palette.lmp"
+    };
+    
+    std::string foundPath;
+    std::ifstream file;
+    for (const auto& path : tryPaths) {
+        file.open(path, std::ios::binary);
+        if (file.is_open()) {
+            foundPath = path;
+            break;
+        }
+    }
+    
+    if (!file.is_open()) {
+        LOG_ERROR("Failed to find palette.lmp file. Tried: {}", tryPaths[0]);
+        return false;
+    }
+    
+    // Read palette data (768 bytes: 256 colors * 3 bytes RGB)
+    file.read(reinterpret_cast<char*>(g_palette), 256 * 3);
+    
+    if (!file.good() || file.gcount() != 768) {
+        LOG_ERROR("Failed to read palette.lmp: expected 768 bytes, got {}", file.gcount());
+        file.close();
+        return false;
+    }
+    
+    file.close();
+    g_paletteLoaded = true;
+    LOG_INFO("Loaded palette from: {}", foundPath);
+    return true;
+}
+
 u32 SimpleBSPLoader::createTextureFromMiptex(const bsp::BSPMiptex& miptex, const u8* data, u32 dataSize) {
+    // Load palette if not already loaded
+    if (!loadPalette()) {
+        LOG_WARN("Using fallback grayscale conversion - palette not loaded");
+    }
     u32 textureID = 0;
     glGenTextures(1, &textureID);
     if (textureID == 0) {
@@ -595,12 +648,7 @@ u32 SimpleBSPLoader::createTextureFromMiptex(const bsp::BSPMiptex& miptex, const
     glBindTexture(GL_TEXTURE_2D, textureID);
     
     // GoldSrc textures are 8-bit indexed color (palette-based)
-    // For now, convert to RGB by using the palette
-    // TODO: Load actual palette from BSP or use a default palette
-    
-    // Convert indexed color to RGB
-    // GoldSrc uses a standard 256-color palette, but for now we'll use a better grayscale conversion
-    // The palette typically has colors, but we'll use a gamma-corrected grayscale approximation
+    // Convert indexed color to RGB using the standard Quake/Half-Life palette
     std::vector<u8> rgbData(miptex.width * miptex.height * 3);
     u32 pixelCount = miptex.width * miptex.height;
     
@@ -609,32 +657,23 @@ u32 SimpleBSPLoader::createTextureFromMiptex(const bsp::BSPMiptex& miptex, const
         LOG_WARN("Texture data size {} is less than expected {} pixels", dataSize, pixelCount);
     }
     
+    // Convert indexed colors to RGB using the palette
     for (u32 i = 0; i < pixelCount && i < dataSize; ++i) {
         u8 index = data[i];
         
-        // GoldSrc palette: index 0 is usually transparent/black, indices 1-255 are colors
-        // For a simple grayscale conversion, we'll map the index directly but avoid pure black
-        // Most textures use indices in the 100-255 range for visible pixels
-        u8 r, g, b;
-        
-        if (index == 0) {
-            // Index 0 is usually transparent/black in GoldSrc palette
-            // Make it slightly visible for debugging
-            r = g = b = 30;  // Dark gray instead of pure black
+        // Use the palette to get RGB values
+        // Index 255 is typically transparent, but we'll render it as the palette color
+        if (g_paletteLoaded) {
+            const u8* paletteColor = g_palette[index];
+            rgbData[i * 3 + 0] = paletteColor[0];  // R
+            rgbData[i * 3 + 1] = paletteColor[1];  // G
+            rgbData[i * 3 + 2] = paletteColor[2];  // B
         } else {
-            // Map index to RGB with significant brightness boost
-            // GoldSrc palette typically has brighter colors at higher indices
-            f32 normalized = static_cast<f32>(index) / 255.0f;
-            // Boost brightness significantly (gamma < 1.0 brightens)
-            normalized = std::pow(normalized, 0.6f);  // Brighten (gamma 0.6)
-            normalized = normalized * 0.9f + 0.1f;  // Range: 0.1 to 1.0 (avoid pure black)
-            u8 gray = static_cast<u8>(normalized * 255.0f);
-            r = g = b = gray;
-        }
-        
-        rgbData[i * 3 + 0] = r;
-        rgbData[i * 3 + 1] = g;
-        rgbData[i * 3 + 2] = b;
+            // Fallback: grayscale conversion if palette not loaded
+            rgbData[i * 3 + 0] = index;
+            rgbData[i * 3 + 1] = index;
+            rgbData[i * 3 + 2] = index;
+        } 
     }
     
     // Verify texture has non-zero data
@@ -658,6 +697,7 @@ u32 SimpleBSPLoader::createTextureFromMiptex(const bsp::BSPMiptex& miptex, const
     }
     
     // Upload texture data
+    // Data is now in RGB format (converted from BGR palette)
     glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB, miptex.width, miptex.height, 0, 
                  GL_RGB, GL_UNSIGNED_BYTE, rgbData.data());
     
