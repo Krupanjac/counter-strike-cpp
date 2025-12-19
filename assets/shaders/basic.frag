@@ -17,20 +17,7 @@ void main() {
         // Use standard texture sampling - OpenGL will automatically select appropriate mip level
         // The LOD bias we set in texture parameters will prefer higher quality mip levels
         vec4 texColor = texture(uTexture, vTexCoord);
-        
-        // Subtle texture sharpening using unsharp mask technique
-        // This enhances texture detail without being too aggressive
-        vec2 texelSize = 1.0 / textureSize(uTexture, 0);
-        
-        // Sample neighboring pixels for edge detection
-        vec4 texColorX = texture(uTexture, vTexCoord + vec2(texelSize.x, 0.0));
-        vec4 texColorY = texture(uTexture, vTexCoord + vec2(0.0, texelSize.y));
-        vec4 texColorAvg = (texColorX + texColorY) * 0.5;
-        
-        // Subtle sharpening: enhance edges while preserving smooth areas
-        // 0.1-0.2 is a good range for subtle enhancement without artifacts
-        vec3 sharpened = texColor.rgb + (texColor.rgb - texColorAvg.rgb) * 0.12;
-        color = clamp(sharpened, 0.0, 1.0);
+        color = texColor.rgb;
         
         // Fallback for debugging
         if (dot(color, vec3(1.0)) < 0.001) {

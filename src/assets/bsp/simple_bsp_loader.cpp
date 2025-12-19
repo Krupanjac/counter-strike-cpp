@@ -159,6 +159,33 @@ Result<SimpleBSPMesh> SimpleBSPLoader::parseBSP(std::ifstream& file, const std::
         texInfos = reinterpret_cast<const bsp::BSPTextureInfo*>(texInfoData.data());
     }
     
+    // Read texture lump to get texture dimensions for proper texture coordinate calculation
+    std::vector<u8> textureData;
+    bsp::BSPHeader nonConstHeader = header;  // Make a copy for readLump
+    std::unordered_map<i32, std::pair<u32, u32>> textureSizes;  // miptex index -> (width, height)
+    
+    if (readLump(file, bsp::LUMP_TEXTURES, nonConstHeader, textureData) && !textureData.empty()) {
+        const i32* numTexturesPtr = reinterpret_cast<const i32*>(textureData.data());
+        i32 numTextures = *numTexturesPtr;
+        
+        if (numTextures > 0 && numTextures <= 1024) {
+            const i32* offsets = reinterpret_cast<const i32*>(textureData.data() + sizeof(i32));
+            
+            for (i32 i = 0; i < numTextures; ++i) {
+                if (offsets[i] != -1) {
+                    const bsp::BSPMiptex* miptex = reinterpret_cast<const bsp::BSPMiptex*>(
+                        textureData.data() + offsets[i]
+                    );
+                    if (miptex->width > 0 && miptex->height > 0 && 
+                        miptex->width <= 1024 && miptex->height <= 1024) {
+                        textureSizes[i] = std::make_pair(miptex->width, miptex->height);
+                    }
+                }
+            }
+            LOG_INFO("Loaded {} texture dimensions for coordinate calculation", textureSizes.size());
+        }
+    }
+    
     // Parse edges
     const bsp::BSPEdge* edges = reinterpret_cast<const bsp::BSPEdge*>(edgeData.data());
     const i32* surfedges = reinterpret_cast<const i32*>(surfedgeData.data());
@@ -280,9 +307,30 @@ Result<SimpleBSPMesh> SimpleBSPLoader::parseBSP(std::ifstream& file, const std::
                         // Calculate texture coordinates from texture vectors
                         // U = dot(position, sAxis) + sAxis[3]
                         // V = dot(position, tAxis) + tAxis[3]
-                        // Scale by texture size (typically 64x64 or 128x128 for GoldSrc)
-                        f32 u = (v.position.x * sAxis[0] + v.position.y * sAxis[1] + v.position.z * sAxis[2] + sAxis[3]) / 64.0f;
-                        f32 texV = (v.position.x * tAxis[0] + v.position.y * tAxis[1] + v.position.z * tAxis[2] + tAxis[3]) / 64.0f;
+                        // Scale by actual texture size (not hardcoded 64)
+                        f32 u = v.position.x * sAxis[0] + v.position.y * sAxis[1] + v.position.z * sAxis[2] + sAxis[3];
+                        f32 texV = v.position.x * tAxis[0] + v.position.y * tAxis[1] + v.position.z * tAxis[2] + tAxis[3];
+                        
+                        // Get actual texture dimensions for this miptex
+                        u32 texWidth = 64;  // Default fallback
+                        u32 texHeight = 64; // Default fallback
+                        auto texSizeIt = textureSizes.find(miptexIndex);
+                        if (texSizeIt != textureSizes.end()) {
+                            texWidth = texSizeIt->second.first;
+                            texHeight = texSizeIt->second.second;
+                        }
+                        
+                        // Divide by actual texture dimensions
+                        u /= static_cast<f32>(texWidth);
+                        texV /= static_cast<f32>(texHeight);
+                        
+                        // GoldSrc texture coordinates: V is typically not flipped, but we need half-texel offset
+                        // Add half-texel offset for proper pixel-center sampling (prevents color misalignment)
+                        f32 halfTexelU = 0.5f / static_cast<f32>(texWidth);
+                        f32 halfTexelV = 0.5f / static_cast<f32>(texHeight);
+                        u += halfTexelU;
+                        texV += halfTexelV;
+                        
                         v.texCoord = Vec2(u, texV);
                     } else {
                         v.texCoord = Vec2(0.0f, 0.0f);
@@ -729,9 +777,8 @@ u32 SimpleBSPLoader::createTextureFromMiptex(const bsp::BSPMiptex& miptex, const
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_REPEAT);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_REPEAT);
     
-    // Set LOD bias to slightly prefer higher quality mip levels (sharper textures)
-    // Negative values = prefer higher quality (closer to base mip level)
-    glTexParameterf(GL_TEXTURE_2D, GL_TEXTURE_LOD_BIAS, -0.5f);
+    // No LOD bias - let OpenGL choose optimal mip level automatically
+    // This prevents artifacts and ensures smooth filtering
     
     // Enable maximum anisotropic filtering if available (reduces blurriness on angled surfaces)
     // This significantly improves texture quality on surfaces viewed at angles
