@@ -334,21 +334,39 @@ private:
         
          if (m_weaponModel.loaded && m_weaponModel.mesh.isValid()) {
              // Position weapon in first-person view position
+             // Use camera's orientation vectors to position weapon relative to view
+             
+             // Weapon offset in camera space: right, down, forward
+             f32 rightOffset = 0.3f;   // Slightly to the right
+             f32 downOffset = -0.2f;   // Slightly down
+             f32 forwardOffset = -0.5f; // In front of camera (negative = forward in camera space)
+             
+             // Calculate weapon position using camera's orientation vectors
+             Vec3 weaponPosition = m_cameraPosition 
+                 + right * rightOffset
+                 + up * downOffset
+                 + forward * forwardOffset;
+             
+             // Build transformation matrix
              Mat4 weaponModel = glm::mat4(1.0f);
              
              // First-person weapon position: right side, slightly down, in front
-             Vec3 weaponOffset = Vec3(0.3f, -0.2f, -0.5f);
+             Vec3 weaponOffset = Vec3(0.3f, -0.2f, 0.0f);
              weaponModel = glm::translate(weaponModel, m_cameraPosition + weaponOffset);
              
-             // Rotate to match camera orientation
-             weaponModel = glm::rotate(weaponModel, glm::radians(m_cameraYaw), Vec3(0.0f, 1.0f, 0.0f));
-             weaponModel = glm::rotate(weaponModel, glm::radians(m_cameraPitch), Vec3(1.0f, 0.0f, 0.0f));
+             // Rotate to match camera orientation using the correct axes
+             weaponModel = glm::rotate(weaponModel, glm::radians(-m_cameraYaw), Vec3(0.0f, 1.0f, 0.0f));
+             weaponModel = glm::rotate(weaponModel, glm::radians(-m_cameraPitch), Vec3(1.0f, 0.0f, 0.0f));
              
              // Scale: glTF models are typically in meters, scale to appropriate weapon size
-             weaponModel = glm::scale(weaponModel, Vec3(0.1f)); // Scale down from meters to reasonable size
+             weaponModel = glm::scale(weaponModel, Vec3(2.5f)); // Scale down from meters to reasonable size
              
-             // Use white color for now (textures will be added later)
-             m_renderer.drawMesh(m_weaponModel.mesh, weaponModel, Vec3(1.0f, 1.0f, 1.0f));
+             // Render with texture if available, otherwise use white color
+             if (m_weaponModel.textureID != 0) {
+                 m_renderer.drawMeshWithTexture(m_weaponModel.mesh, weaponModel, m_weaponModel.textureID, Vec3(1.0f, 1.0f, 1.0f));
+             } else {
+                 m_renderer.drawMesh(m_weaponModel.mesh, weaponModel, Vec3(1.0f, 1.0f, 1.0f));
+             }
          }
     }
     

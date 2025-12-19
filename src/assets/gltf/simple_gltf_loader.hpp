@@ -9,6 +9,7 @@ namespace cscpp::assets {
 
 struct SimpleModel {
     renderer::GLMesh mesh;
+    u32 textureID = 0;  // OpenGL texture ID (0 = no texture)
     bool loaded = false;
 };
 

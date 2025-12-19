@@ -2,6 +2,7 @@
 #include "core/logging/logger.hpp"
 #include <fstream>
 #include <filesystem>
+#include <glad/glad.h>
 
 #if defined(TINYGLTF_FOUND) || __has_include(<tiny_gltf.h>)
 // Define stb_image implementation before tinygltf includes it
@@ -302,10 +303,101 @@ Result<SimpleModel> SimpleGLTFLoader::loadGLTF(const std::string& path) {
         return createTestWeaponMesh();
     }
     
+    // Load textures from glTF
+    // Try to find a material with a base color texture
+    u32 textureID = 0;
+    for (const auto& material : model.materials) {
+        if (material.pbrMetallicRoughness.baseColorTexture.index >= 0) {
+            int textureIndex = material.pbrMetallicRoughness.baseColorTexture.index;
+            if (textureIndex >= 0 && textureIndex < static_cast<int>(model.textures.size())) {
+                const auto& texture = model.textures[textureIndex];
+                if (texture.source >= 0 && texture.source < static_cast<int>(model.images.size())) {
+                    const auto& image = model.images[texture.source];
+                    
+                    // Load image data
+                    std::vector<u8> imageData;
+                    int width = 0, height = 0, channels = 0;
+                    
+                    if (!image.image.empty() && image.width > 0 && image.height > 0) {
+                        // Image data is already decoded by tinygltf
+                        imageData = image.image;
+                        width = image.width;
+                        height = image.height;
+                        channels = image.component; // 1=gray, 2=gray+alpha, 3=RGB, 4=RGBA
+                    } else if (!image.uri.empty()) {
+                        // Image is in external file - try to load it
+                        std::filesystem::path imagePath = baseDir / image.uri;
+                        std::string imagePathStr = imagePath.string();
+                        
+                        // Try multiple paths
+                        std::vector<std::string> tryPaths = {
+                            imagePathStr,
+                            image.uri,
+                            baseDir.string() + "/" + image.uri,
+                            std::filesystem::path(path).parent_path().string() + "/" + image.uri
+                        };
+                        
+                        bool loaded = false;
+                        for (const auto& tryPath : tryPaths) {
+                            u8* data = stbi_load(tryPath.c_str(), &width, &height, &channels, 0);
+                            if (data) {
+                                imageData.assign(data, data + width * height * channels);
+                                stbi_image_free(data);
+                                loaded = true;
+                                LOG_INFO("Loaded texture from: {}", tryPath);
+                                break;
+                            }
+                        }
+                        
+                        if (!loaded) {
+                            LOG_WARN("Failed to load texture image from any path. Tried: {}", image.uri);
+                            continue;
+                        }
+                    } else {
+                        LOG_WARN("Image has no data and no URI");
+                        continue;
+                    }
+                    
+                    if (!imageData.empty() && width > 0 && height > 0) {
+                        // Create OpenGL texture
+                        glGenTextures(1, &textureID);
+                        if (textureID != 0) {
+                            glBindTexture(GL_TEXTURE_2D, textureID);
+                            
+                            // Determine format
+                            GLenum format = GL_RGB;
+                            if (channels == 4) {
+                                format = GL_RGBA;
+                            } else if (channels == 1) {
+                                format = GL_RED;
+                            }
+                            
+                            // Upload texture data
+                            glTexImage2D(GL_TEXTURE_2D, 0, format, width, height, 0, format, GL_UNSIGNED_BYTE, imageData.data());
+                            
+                            // Set texture parameters
+                            glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+                            glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+                            glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_REPEAT);
+                            glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_REPEAT);
+                            
+                            glBindTexture(GL_TEXTURE_2D, 0);
+                            
+                            LOG_INFO("Loaded texture from glTF: {}x{} ({} channels, ID: {})", width, height, channels, textureID);
+                            break; // Use first texture found
+                        }
+                    }
+                }
+            }
+        }
+    }
+    
     result.mesh.create(allVertices, allIndices);
+    result.textureID = textureID;
     result.loaded = true;
     
-    LOG_INFO("Loaded glTF model: {} vertices, {} indices", allVertices.size(), allIndices.size());
+    LOG_INFO("Loaded glTF model: {} vertices, {} indices, texture ID: {}", 
+             allVertices.size(), allIndices.size(), textureID);
     
     return result;
 }
