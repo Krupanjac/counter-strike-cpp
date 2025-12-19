@@ -696,9 +696,13 @@ u32 SimpleBSPLoader::createTextureFromMiptex(const bsp::BSPMiptex& miptex, const
         LOG_WARN("Texture '{}' has no non-zero pixels! Texture may appear black.", miptex.name);
     }
     
-    // Upload texture data
-    // Data is now in RGB format (converted from BGR palette)
-    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB, miptex.width, miptex.height, 0, 
+    // Set pixel storage parameters for optimal quality
+    // Ensure proper alignment for RGB data (3 bytes per pixel)
+    glPixelStorei(GL_UNPACK_ALIGNMENT, 1);  // No padding needed for RGB
+    
+    // Upload texture data with explicit internal format for better quality
+    // Use GL_RGB8 instead of GL_RGB for explicit 8-bit per channel
+    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB8, miptex.width, miptex.height, 0, 
                  GL_RGB, GL_UNSIGNED_BYTE, rgbData.data());
     
     // Check for errors
@@ -707,12 +711,47 @@ u32 SimpleBSPLoader::createTextureFromMiptex(const bsp::BSPMiptex& miptex, const
         LOG_ERROR("OpenGL error uploading texture '{}': 0x{:X}", miptex.name, static_cast<u32>(err));
     }
     
-    // Set texture parameters
-    // Use GL_LINEAR instead of GL_LINEAR_MIPMAP_LINEAR since we're not generating mipmaps
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+    // Generate high-quality mipmaps for better quality when textures are viewed at distance
+    // This creates multiple resolution levels automatically
+    glGenerateMipmap(GL_TEXTURE_2D);
+    
+    err = glGetError();
+    if (err != GL_NO_ERROR) {
+        LOG_WARN("OpenGL error generating mipmaps for '{}': 0x{:X}", miptex.name, static_cast<u32>(err));
+    }
+    
+    // Set texture parameters for maximum quality filtering
+    // Use trilinear filtering (GL_LINEAR_MIPMAP_LINEAR) for minification - smooth interpolation between mip levels
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR_MIPMAP_LINEAR);
+    // Use linear filtering for magnification (when viewing textures up close)
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+    // Repeat texture coordinates (seamless tiling)
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_REPEAT);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_REPEAT);
+    
+    // Set LOD bias to slightly prefer higher quality mip levels (sharper textures)
+    // Negative values = prefer higher quality (closer to base mip level)
+    glTexParameterf(GL_TEXTURE_2D, GL_TEXTURE_LOD_BIAS, -0.5f);
+    
+    // Enable maximum anisotropic filtering if available (reduces blurriness on angled surfaces)
+    // This significantly improves texture quality on surfaces viewed at angles
+    // Anisotropic filtering is widely supported and part of OpenGL core since 4.6
+    GLfloat maxAnisotropy = 1.0f;
+    // GL_MAX_TEXTURE_MAX_ANISOTROPY is 0x84FF, but GLAD should define it
+    // If not defined, we'll skip anisotropic filtering (textures will still look good with mipmaps)
+    #ifndef GL_MAX_TEXTURE_MAX_ANISOTROPY
+        #define GL_MAX_TEXTURE_MAX_ANISOTROPY 0x84FF
+        #define GL_TEXTURE_MAX_ANISOTROPY 0x84FE
+    #endif
+    
+    glGetFloatv(GL_MAX_TEXTURE_MAX_ANISOTROPY, &maxAnisotropy);
+    if (maxAnisotropy > 1.0f) {
+        // Use maximum available anisotropy for best quality (typically 8x or 16x)
+        // This provides the sharpest textures on angled surfaces
+        GLfloat anisotropy = maxAnisotropy;
+        glTexParameterf(GL_TEXTURE_2D, GL_TEXTURE_MAX_ANISOTROPY, anisotropy);
+        LOG_DEBUG("Texture '{}' using {}x anisotropic filtering", miptex.name, static_cast<int>(anisotropy));
+    }
     
     // Verify texture was created correctly
     GLint width = 0, height = 0;

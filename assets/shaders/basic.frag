@@ -14,16 +14,27 @@ void main() {
     vec3 color = uColor;
     
     if (uUseTexture) {
+        // Use standard texture sampling - OpenGL will automatically select appropriate mip level
+        // The LOD bias we set in texture parameters will prefer higher quality mip levels
         vec4 texColor = texture(uTexture, vTexCoord);
-        // Use texture color directly
-        // If texture returns black, it might be a sampling issue
-        // For debugging: if texture is completely black, use a bright color to verify shader is working
-        if (dot(texColor.rgb, vec3(1.0)) < 0.001) {
-            // Texture appears completely black - might be sampling issue
-            // Use a bright color temporarily to verify the shader path is working
+        
+        // Subtle texture sharpening using unsharp mask technique
+        // This enhances texture detail without being too aggressive
+        vec2 texelSize = 1.0 / textureSize(uTexture, 0);
+        
+        // Sample neighboring pixels for edge detection
+        vec4 texColorX = texture(uTexture, vTexCoord + vec2(texelSize.x, 0.0));
+        vec4 texColorY = texture(uTexture, vTexCoord + vec2(0.0, texelSize.y));
+        vec4 texColorAvg = (texColorX + texColorY) * 0.5;
+        
+        // Subtle sharpening: enhance edges while preserving smooth areas
+        // 0.1-0.2 is a good range for subtle enhancement without artifacts
+        vec3 sharpened = texColor.rgb + (texColor.rgb - texColorAvg.rgb) * 0.12;
+        color = clamp(sharpened, 0.0, 1.0);
+        
+        // Fallback for debugging
+        if (dot(color, vec3(1.0)) < 0.001) {
             color = vec3(1.0, 0.0, 1.0);  // Magenta to indicate texture sampling issue
-        } else {
-            color = texColor.rgb;
         }
     } else {
         // Visualize texture coordinates as a checkerboard pattern
